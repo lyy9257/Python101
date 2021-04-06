@@ -1,5 +1,9 @@
-import configparser
+'''
+아파트 거래 히스토리 쿼리 
+'''
+
 import pandas as pd
+import configparser
 import pymysql
 
 ### Read config about database
@@ -11,10 +15,46 @@ db_port = config.get('MYSQL', 'DB_PORT')
 db_id = config.get('MYSQL', 'DB_ID')
 db_pw = config.get('MYSQL', 'DB_PW')
 
-# 아파트 거래내역 검색 - 인자 자유입력
-def get_tradelog(area_big, area_small, apart_name):
+## 아파트 거래내역 검색
+def search_trade_history(request):
 
-    ## 저장할 데이터베이스 호출(pymysql)
+    # json 호출
+    request_json = request.get_json()
+    
+    # 호출 데이터 길이 Syntax
+    # 만약에 args 없으면 X
+    req_size_syntax = ''
+
+    # argument parsing    
+    if request.args:
+        area_big = request.args.get('area_big')
+        area_small = request.args.get('area_small')
+        apart_name = request.args.get('apart_name')
+
+     
+        if request.args.get('reqSize'):
+            req_size = request.args.get('reqSize')
+            req_size_syntax = """
+                LIMIT 0, %(reqSize)s
+            """ %{
+                'reqSize' : req_size
+            }
+    # json parsing
+    if request_json:
+        area_big = request_json['area_big']
+        area_small = request_json['area_small']
+        apart_name = request_json['apart_name']
+
+        if request_json['reqSize']:
+            req_size = request_json['reqSize']
+            req_size_syntax = """
+                LIMIT 0, %(reqSize)s
+            """ %{
+                'reqSize' : req_size
+            }
+
+    
+    ### 저장할 데이터베이스 호출(pymysql)
     db_conn = pymysql.connect(
         host = db_ip,
         user = db_id,
@@ -23,25 +63,21 @@ def get_tradelog(area_big, area_small, apart_name):
         charset = 'utf8'
     )
 
-    ## 구문작성
-    ## SQL Injection 방지를 위해 다음과 같이
-    ## 딕셔너리 형태로 포매팅하였음.
-    sql_syntax = '''
+    sql_syntax = """
         SELECT 년, 월, 일, 전용면적, 층, 평수, 평당가, 거래금액
         FROM apart.tradelog_%(area_big)s
         WHERE 법정동읍면동코드 = %(area_small)s and 아파트 = "%(apart_name)s"
-        ORDER BY 년 DESC, 월 DESC, 일 DESC;
-    ''' %{
+        ORDER BY 년 DESC, 월 DESC, 일 DESC
+        %(req_size_syntax)s;
+    """ %{
         'area_big' : area_big,
         'area_small' : area_small,
         'apart_name' : apart_name,
+        'req_size_syntax' : req_size_syntax
     }
 
-    result = pd.read_sql(sql_syntax, db_conn)
-        
-    return result
-
-if __name__ == '__main__':
-    result = get_tradelog('광주광', 10800, '소촌동대성베르힐')
+    result = pd.read_sql(sql_syntax, db_conn).to_json(
+        orient='records', indent=4, force_ascii=False
+    )
     
-    print(result)
+    return result
